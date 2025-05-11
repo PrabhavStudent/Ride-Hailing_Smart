@@ -1,23 +1,26 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-  <meta charset="UTF-8">
-  <title>Smart Ride Matching</title>
-  <link rel="stylesheet" href="style.css">
-  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC7tJgww5a2zJgTow868pISVefaKnaryvs
-  &libraries=directions"></script>
-</head>
+    <meta charset="UTF-8">
+    <title>Smart Ride Matching</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://maps.googleapis.com/maps/api/js?key=YOUR_GOOGLE_MAPS_API_KEY&libraries=directions"></script>
+    </head>
+
 <body>
-  <div class="container">
-    <h1>Smart Ride </h1>
-    
-    <input type="text" id="userId" placeholder="Enter User ID (example: u1)">
-    <button onclick="matchRide()">Find Driver</button>
+    <div class="container">
+        <h1>Smart Ride</h1>
 
-    <div id="result"></div>
-    <div id="map" style="height: 400px; width: 100%;"></div>
-  </div>
+        <input type="text" id="userId" placeholder="Enter User ID (example: u1)">
+        <button onclick="requestRide()">Request Ride</button>
+        <button onclick="matchRide()">Find Driver</button>
 
-  <script src="script.js"></script>
+        <div id="result"></div>
+        <div id="map" style="height: 400px; width: 100%;"></div>
+    </div>
+
+    <script src="script.js"></script>
 </body>
+
 </html>

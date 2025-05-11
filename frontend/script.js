@@ -1,3 +1,33 @@
+async function requestRide() {
+    const userId = document.getElementById('userId').value;
+    if (!userId) {
+        alert('Please enter a User ID');
+        return;
+    }
+
+    // Simulate user location input (replace with actual location input)
+    const userLocation = {
+        latitude: 22.5 + Math.random() * 0.1,
+        longitude: 88.3 + Math.random() * 0.1
+    };
+
+    try {
+        const response = await fetch('http://localhost:5000/api/requestRide', {  // New endpoint
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ userId, userLocation })
+        });
+
+        const data = await response.json();
+        alert(data.message); // "Ride request received"
+    } catch (error) {
+        console.error('Error requesting ride:', error);
+        alert('Error requesting ride!');
+    }
+}
+
 async function matchRide() {
     const userId = document.getElementById('userId').value;
 
@@ -22,7 +52,8 @@ async function matchRide() {
             Matched Driver: ${data.matchedDriver} <br>
             ETA: ${data.etaInMinutes} minutes <br>
             Distance: ${data.route.distance} <br>
-            Duration: ${data.route.duration}
+            Duration: ${data.route.duration} <br>
+            Fare: ${data.fare.toFixed(2)}
         `;
     } catch (error) {
         console.error('Error:', error);
@@ -39,13 +70,13 @@ function displayRoute(route) {
         })
     });
 
-    const waypoints = route.path.slice(1, route.path.length - 1).map(node => ({
-        location: graphNodes[node].latitude + ',' + graphNodes[node].longitude,
+    const waypoints = route.steps.slice(1, route.steps.length - 1).map(step => ({
+        location: step.start_location, //  Use step locations
         stopover: true
     }));
 
-    const origin = graphNodes[route.path[0]].latitude + ',' + graphNodes[route.path[0]].longitude;
-    const destination = graphNodes[route.path[route.path.length - 1]].latitude + ',' + graphNodes[route.path[route.path.length - 1]].longitude;
+    const origin = route.steps[0].start_location;
+    const destination = route.steps[route.steps.length - 1].end_location;
 
     directionsService.route(
         {

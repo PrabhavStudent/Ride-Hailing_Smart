@@ -1,34 +1,64 @@
-function generateSyntheticData(numUsers, numDrivers) {
-    const users = [];
-    const drivers = [];
+const { parse } = require('csv-parse');
+const fs = require('fs');
 
-    for (let i = 1; i <= numUsers; i++) {
-        users.push({
-            id: `u${100 + i}`,
-            name: `User${i}`,
-            location: {
-                latitude:  30.3165 + Math.random() * 0.2, //  Roughly Kolkata latitude range
-                longitude: 78.0322 + Math.random() * 0.2  // Roughly Kolkata longitude range
-            }
+let users = [];
+let drivers = [];
+
+function loadCSVData(filename, headers, callback) {
+    const results = [];
+    fs.createReadStream(filename)
+        .pipe(parse({
+            delimiter: ',',
+            columns: headers
+        }))
+        .on('data', (data) => results.push(data))
+        .on('end', () => {
+            callback(null, results);
+        })
+        .on('error', (error) => {
+            callback(error);
         });
-    }
-
-    for (let i = 1; i <= numDrivers; i++) {
-        drivers.push({
-            id: `d${500 + i}`,
-            name: `Driver${i}`,
-            location: {
-                latitude: 22.5 + Math.random() * 0.2,
-                longitude: 88.3 + Math.random() * 0.2
-            },
-            speed: 30 + Math.random() * 30, // Speed between 30-60 km/h
-            available: Math.random() < 0.8  // 80% chance of being available
-        });
-    }
-
-    return { users, drivers };
 }
 
-const { users, drivers } = generateSyntheticData(20, 10); // Generate 20 users and 10 drivers
+// Load users from CSV
+loadCSVData('./users.csv', ['id', 'name', 'latitude', 'longitude'], (err, userData) => {
+    if (err) {
+        console.error('Error loading users.csv:', err);
+        // Handle error appropriately, e.g., exit the program or use default data
+        users = []; // set default
+    } else {
+        users = userData.map(row => ({
+            id: row.id,
+            name: row.name,
+            location: {
+                latitude: parseFloat(row.latitude),
+                longitude: parseFloat(row.longitude)
+            }
+        }));
+        console.log('Users loaded successfully.');
+    }
+
+    // Load drivers from CSV
+    loadCSVData('./drivers.csv', ['id', 'name', 'latitude', 'longitude', 'speed', 'available'], (err, driverData) => {
+        if (err) {
+            console.error('Error loading drivers.csv:', err);
+             drivers = [];
+        } else {
+            drivers = driverData.map(row => ({
+                id: row.id,
+                name: row.name,
+                location: {
+                    latitude: parseFloat(row.latitude),
+                    longitude: parseFloat(row.longitude)
+                },
+                speed: parseFloat(row.speed),
+                available: row.available === 'true' // Convert 'true'/'false' to boolean
+            }));
+             console.log('Drivers loaded successfully.');
+        }
+
+
+    });
+});
 
 module.exports = { users, drivers };
