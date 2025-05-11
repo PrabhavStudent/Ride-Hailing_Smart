@@ -1,0 +1,10 @@
+FrontEnd : 
+Function Takes Data from Server and displays the route on the map by calling the google map API.
+Also displays the distance and duratuion
+
+
+
+BackEnd : 
+Makes the request to the Google Map Direction  API using user and driver coordinates,extracts thre route data (Direction,duratuion,steps) from API response and sends it to the FrontEnd for display.
+
+
