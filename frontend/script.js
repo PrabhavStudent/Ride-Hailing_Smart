@@ -98,14 +98,24 @@ function displayRoute(route) {
     });
 
     const path = [];
-    route.steps.forEach(step => {
-        if (step.polyline && step.polyline.points) {
-            const decodedPoints = decodePolyline(step.polyline.points);
-            decodedPoints.forEach(point => {
-                path.push(new google.maps.LatLng(point.lat, point.lng));
-            });
-        }
-    });
+    if (route.path && route.path.length > 0) {
+        route.path.forEach(node => {
+            const coord = graphNodes[node];
+            if (coord) {
+                path.push(new google.maps.LatLng(coord.latitude, coord.longitude));
+            }
+        });
+    } else {
+        // Fallback to decoding polylines if available
+        route.steps.forEach(step => {
+            if (step.polyline && step.polyline.points) {
+                const decodedPoints = decodePolyline(step.polyline.points);
+                decodedPoints.forEach(point => {
+                    path.push(new google.maps.LatLng(point.lat, point.lng));
+                });
+            }
+        });
+    }
 
     const routePath = new google.maps.Polyline({
         path: path,
