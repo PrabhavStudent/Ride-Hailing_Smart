@@ -113,7 +113,8 @@ async function getDirectionsRoute(user, driver, callback) {
             duration: duration,
             steps: steps,
             userLocation: user.location,
-            driverLocation: driver.location
+            driverLocation: driver.location,
+            path: pathNodes  // Added path array for frontend route display
         };
 
         // Calculate fare
