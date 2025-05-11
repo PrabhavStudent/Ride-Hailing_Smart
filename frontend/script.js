@@ -99,10 +99,12 @@ function displayRoute(route) {
 
     const path = [];
     route.steps.forEach(step => {
-        const decodedPoints = decodePolyline(step.polyline);
-        decodedPoints.forEach(point => {
-            path.push(new google.maps.LatLng(point.lat, point.lng));
-        });
+        if (step.polyline && step.polyline.points) {
+            const decodedPoints = decodePolyline(step.polyline.points);
+            decodedPoints.forEach(point => {
+                path.push(new google.maps.LatLng(point.lat, point.lng));
+            });
+        }
     });
 
     const routePath = new google.maps.Polyline({

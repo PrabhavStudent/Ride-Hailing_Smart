@@ -3,113 +3,60 @@ const app = express();
 const cors = require('cors');
 const request = require('request');
 
-const { users, drivers } = require('./data');
-const matchDriver = require('./RideMatching');
-const { findShortestPath } = require('./util'); // You might not need this anymore
+const { loadData } = require('./data');
+const { createMatchDriver } = require('./RideMatching');
+const { findShortestPath, graph, graphNodes, findNearestNode, calculateDistance } = require('./util');
 
 app.use(cors());
 app.use(express.json());
 
-const GOOGLE_MAPS_API_KEY = 'AIzaSyC7tJgww5a2zJgTow868pISVefaKnaryvs'; // Replace with your actual API key
-
 // Temporary storage for active rides and ride requests (replace with a proper database in production)
 const activeRides = {};
-const rideRequests = [];
-
-const POOLING_BUFFER_TIME = 60000; // 1 minute (adjust as needed)
-const POOLING_RADIUS = 0.01; // Example radius (in lat/lon degrees)
-
-const BASE_FARE = 50;
-const DISTANCE_RATE = 10; // Per kilometer (or unit of distance)
-const DURATION_RATE = 2; // Per minute
-const HIGH_DEMAND_THRESHOLD = 10; // Example: Number of active requests for high demand
-const LOW_DEMAND_THRESHOLD = 2; // Example: Number of active requests for low demand
-const HIGH_DEMAND_MULTIPLIER = 1.5;
-const LOW_DEMAND_MULTIPLIER = 0.8;
-
-app.post('/api/requestRide', (req, res) => { // New endpoint for ride requests
-    const { userId, userLocation } = req.body;
-    const request = { userId, userLocation, requestTime: Date.now() };
-    rideRequests.push(request);
-    res.json({ message: 'Ride request received' });
-
-    processRideRequests();
-});
-
-app.post('/api/matchRide', (req, res) => {
-    const { userId } = req.body;
-
-    const user = users.find(u => u.id === userId);
-    if (!user) {
-        return res.status(404).json({ error: 'User not found' });
-    }
-
-    const match = matchDriver(user.location);
-    const driver = match.driver;
-
-    getDirectionsRoute(user, driver, (err, routeData) => {
-        if (err) {
-            return res.status(500).json({ error: err.message });
-        }
-
-        const rideId = `${userId}-${driver.id}`; // Unique ride ID
-        activeRides[rideId] = {
-            user,
-            driver,
-            route: routeData,
-            lastUpdated: Date.now()
-        };
-
-        res.json({
-            user: user.name,
-            matchedDriver: driver.name,
-            etaInMinutes: match.estimatedTimeInMinutes,
-            route: routeData,
-            fare: routeData.fare // Include fare in the initial response
-        });
-
-        // Start periodic route updates
-        startRouteUpdates(rideId);
-    });
-});
 
 function getDirectionsRoute(user, driver, callback) {
-    const origin = `${user.location.latitude},${user.location.longitude}`;
-    const destination = `${driver.location.latitude},${driver.location.longitude}`;
+    // Use Dijkstra's algorithm to find shortest path between user and driver locations
+    const startNode = findNearestNode(user.location);
+    const endNode = findNearestNode(driver.location);
 
-    const directionsUrl = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${destination}&key=${GOOGLE_MAPS_API_KEY}`;
+    if (!startNode || !endNode) {
+        return callback(new Error('Could not find nearest graph nodes for user or driver'));
+    }
 
-    request(directionsUrl, (error, response, body) => {
-        if (error || response.statusCode !== 200) {
-            return callback(new Error('Failed to get route from Google Maps'));
-        }
+    const shortestPathResult = findShortestPath(graph, startNode, endNode);
+    const pathNodes = shortestPathResult.path;
+    const totalDistance = shortestPathResult.distance;
 
-        const directionsData = JSON.parse(body);
-        if (directionsData.status !== 'OK') {
-            return callback(new Error(`Google Maps API error: ${directionsData.status}`));
-        }
+    // Approximate duration assuming average speed (e.g., 40 km/h)
+    const averageSpeed = 40; // km/h
+    const duration = (totalDistance / averageSpeed) * 60; // in minutes
 
-        const route = directionsData.routes[0];
-        const legs = route.legs[0];
+    // Construct route steps with dummy instructions and polylines (for frontend compatibility)
+    const steps = [];
+    for (let i = 0; i < pathNodes.length - 1; i++) {
+        const fromNode = pathNodes[i];
+        const toNode = pathNodes[i + 1];
+        steps.push({
+            html_instructions: `Drive from ${fromNode} to ${toNode}`,
+            travel_mode: 'DRIVING',
+            polyline: {
+                points: '' // Polyline encoding can be added if needed
+            }
+        });
+    }
 
-        const routeData = {
-            distance: legs.distance.value / 1000, // Distance in kilometers
-            duration: legs.duration.value / 60,   // Duration in minutes
-            steps: legs.steps.map(step => ({
-                html_instructions: step.html_instructions,
-                travel_mode: step.travel_mode,
-                polyline: step.polyline.points
-            })),
-            userLocation: user.location,
-            driverLocation: driver.location
-        };
+    const routeData = {
+        distance: totalDistance,
+        duration: duration,
+        steps: steps,
+        userLocation: user.location,
+        driverLocation: driver.location
+    };
 
-        // Calculate fare
-        const fare = calculateFare(routeData.distance, routeData.duration, rideRequests.length); // Use active request count as a proxy for demand
-        routeData.fare = fare;
+    // Calculate fare
+    const fare = calculateFare(routeData.distance, routeData.duration, rideRequests.length); // Use active request count as a proxy for demand
+    routeData.fare = fare;
 
-        callback(null, routeData);
-    });
+    callback(null, routeData);
 }
 
 function updateRoute(rideId) {
@@ -183,12 +130,7 @@ function clusterRideRequests(requests) {
     return clusters;
 }
 
-function calculateDistance(loc1, loc2) {
-    // Simple distance calculation (replace with a more accurate one if needed)
-    const dx = loc1.latitude - loc2.latitude;
-    const dy = loc1.longitude - loc2.longitude;
-    return Math.sqrt(dx * dx + dy * dy);
-}
+/* Removed duplicate calculateDistance function to avoid redeclaration error */
 
 function calculateAndMatchPooledRide(cluster) {
     const waypoints = cluster.slice(1).map(req => ({
@@ -258,7 +200,20 @@ function calculateFare(distance, duration, demand) {
     return fare * demandMultiplier;
 }
 
+async function startServer() {
+    try {
+        const data = await loadData();
+        users = data.users;
+        drivers = data.drivers;
+        matchDriver = createMatchDriver(drivers);
+
+        app.listen(PORT, () => {
+            console.log(`Ride Matching Server is Running on port ${PORT}`);
+        });
+    } catch (err) {
+        console.error('Failed to load data:', err);
+    }
+}
+
 const PORT = 5000;
-app.listen(PORT, () => {
-    console.log(`Ride Matching Server is Running on port ${PORT}`);
-});
+startServer();
