@@ -10,7 +10,7 @@ const { findShortestPath } = require('./util'); // You might not need this anymo
 app.use(cors());
 app.use(express.json());
 
-const GOOGLE_MAPS_API_KEY = 'YOUR_GOOGLE_MAPS_API_KEY'; // Replace with your actual API key
+const GOOGLE_MAPS_API_KEY = 'AIzaSyC7tJgww5a2zJgTow868pISVefaKnaryvs'; // Replace with your actual API key
 
 // Temporary storage for active rides and ride requests (replace with a proper database in production)
 const activeRides = {};

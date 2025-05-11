@@ -61,39 +61,59 @@ async function matchRide() {
     }
 }
 
+function decodePolyline(encoded) {
+    let points = [];
+    let index = 0, len = encoded.length;
+    let lat = 0, lng = 0;
+
+    while (index < len) {
+        let b, shift = 0, result = 0;
+        do {
+            b = encoded.charCodeAt(index++) - 63;
+            result |= (b & 0x1f) << shift;
+            shift += 5;
+        } while (b >= 0x20);
+        let dlat = ((result & 1) ? ~(result >> 1) : (result >> 1));
+        lat += dlat;
+
+        shift = 0;
+        result = 0;
+        do {
+            b = encoded.charCodeAt(index++) - 63;
+            result |= (b & 0x1f) << shift;
+            shift += 5;
+        } while (b >= 0x20);
+        let dlng = ((result & 1) ? ~(result >> 1) : (result >> 1));
+        lng += dlng;
+
+        points.push({ lat: lat / 1e5, lng: lng / 1e5 });
+    }
+    return points;
+}
+
 function displayRoute(route) {
-    const directionsService = new google.maps.DirectionsService();
-    const directionsRenderer = new google.maps.DirectionsRenderer({
-        map: new google.maps.Map(document.getElementById('map'), {
-            center: { latitude: route.userLocation.latitude, longitude: route.userLocation.longitude },
-            zoom: 13
-        })
+    const map = new google.maps.Map(document.getElementById('map'), {
+        center: { lat: route.userLocation.latitude, lng: route.userLocation.longitude },
+        zoom: 13
     });
 
-    const waypoints = route.steps.slice(1, route.steps.length - 1).map(step => ({
-        location: step.start_location, //  Use step locations
-        stopover: true
-    }));
+    const path = [];
+    route.steps.forEach(step => {
+        const decodedPoints = decodePolyline(step.polyline);
+        decodedPoints.forEach(point => {
+            path.push(new google.maps.LatLng(point.lat, point.lng));
+        });
+    });
 
-    const origin = route.steps[0].start_location;
-    const destination = route.steps[route.steps.length - 1].end_location;
+    const routePath = new google.maps.Polyline({
+        path: path,
+        geodesic: true,
+        strokeColor: '#FF0000',
+        strokeOpacity: 1.0,
+        strokeWeight: 4
+    });
 
-    directionsService.route(
-        {
-            origin: origin,
-            destination: destination,
-            waypoints: waypoints,
-            travelMode: google.maps.TravelMode.DRIVING
-        },
-        (response, status) => {
-            if (status === google.maps.DirectionsStatus.OK) {
-                directionsRenderer.setDirections(response);
-            } else {
-                console.error('Directions request failed:', status);
-                alert('Could not display route.');
-            }
-        }
-    );
+    routePath.setMap(map);
 }
 
 //  Mapping of graph nodes to lat/long (IMPORTANT:  Keep consistent with backend!)

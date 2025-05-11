@@ -1,6 +1,6 @@
 function calculateDistance(loc1, loc2) {
-    const dx = loc1.x - loc2.x;
-    const dy = loc1.y - loc2.y;
+    const dx = loc1.latitude - loc2.latitude;
+    const dy = loc1.longitude - loc2.longitude;
     return Math.sqrt(dx * dx + dy * dy);
 }
 
