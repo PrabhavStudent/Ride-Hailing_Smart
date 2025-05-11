@@ -1,14 +1,34 @@
-const users = [
-    { id: 'u1', name: 'User1', location: { x: 5, y: 5 } },
-    { id: 'u2', name: 'User2', location: { x: 15, y: 15 } },
-    { id: 'u3', name: 'User3', location: { x: 6, y: 7 } },
-    { id: 'u4', name: 'User4', location: { x: 13, y: 15 } }
-  ];
-  
-  const drivers = [
-    { id: 'd1', name: 'Driver1', location: { x: 6, y: 6 }, speed: 40 },  // in km/h
-    { id: 'd2', name: 'Driver2', location: { x: 90, y: 70 }, speed: 110 },
-    { id: 'd3', name: 'Driver3', location: { x: 4, y: 4 }, speed: 35 },
-  ];
-  
-  module.exports = { users, drivers };
+function generateSyntheticData(numUsers, numDrivers) {
+    const users = [];
+    const drivers = [];
+
+    for (let i = 1; i <= numUsers; i++) {
+        users.push({
+            id: `u${100 + i}`,
+            name: `User${i}`,
+            location: {
+                latitude:  30.3165 + Math.random() * 0.2, //  Roughly Kolkata latitude range
+                longitude: 78.0322 + Math.random() * 0.2  // Roughly Kolkata longitude range
+            }
+        });
+    }
+
+    for (let i = 1; i <= numDrivers; i++) {
+        drivers.push({
+            id: `d${500 + i}`,
+            name: `Driver${i}`,
+            location: {
+                latitude: 22.5 + Math.random() * 0.2,
+                longitude: 88.3 + Math.random() * 0.2
+            },
+            speed: 30 + Math.random() * 30, // Speed between 30-60 km/h
+            available: Math.random() < 0.8  // 80% chance of being available
+        });
+    }
+
+    return { users, drivers };
+}
+
+const { users, drivers } = generateSyntheticData(20, 10); // Generate 20 users and 10 drivers
+
+module.exports = { users, drivers };
