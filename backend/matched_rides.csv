@@ -1,0 +1,5 @@
+userId,userName,driverId,driverName,timestamp,fare,distance,duration
+user001,Aarav,driver004,Naresh,2025-05-12T16:36:08.532Z,175.3466666666667,11.3 km,28 mins
+user001,Aarav,driver004,Naresh,2025-05-12T16:36:16.727Z,175.3466666666667,11.3 km,28 mins
+user002,Vivaan,driver004,Naresh,2025-05-12T16:38:38.397Z,212.056,14.2 km,37 mins
+user002,Vivaan,driver004,Naresh,2025-05-12T16:43:02.711Z,265.07,14.2 km,37 mins
