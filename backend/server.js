@@ -155,11 +155,7 @@ app.post('/api/requestRide', (req, res) => {
     evaluateRideQueue(); // process queue if needed
 });
 
-// Immediate matching endpoint
 app.post('/api/matchRide', (req, res) => {
-    
-    const logFile = 'matched_rides.csv';
-
     const { userId } = req.body;
 
     const user = userList.find(u => u.id === userId);
@@ -167,37 +163,68 @@ app.post('/api/matchRide', (req, res) => {
         return res.status(400).json({ error: 'Invalid user or missing location' });
     }
 
-    const match = getDriverMatch(user.location);
+    // Group similar users for pooling (for demo: pick 2 others within RIDE_RADIUS_LIMIT)
+    const poolCandidates = rideQueue.filter(r =>
+        r.userId !== userId &&
+        calculateDistance(user.location, r.userLocation) <= RIDE_RADIUS_LIMIT
+    );
+
+    const pooledUsers = [user];
+    if (poolCandidates.length > 0) {
+        const extraUsers = poolCandidates.slice(0, 2);
+        extraUsers.forEach(r => {
+            const match = userList.find(u => u.id === r.userId);
+            if (match) pooledUsers.push(match);
+        });
+    }
+
+    // Pick the first user to calculate match
+    const primary = pooledUsers[0];
+    const match = getDriverMatch(primary.location);
     const { driver, estimatedTimeInMinutes } = match;
 
     if (!driver) {
         return res.status(500).json({ error: 'No drivers available' });
     }
 
-    getUpdatedRoute(user, driver, (err, routeDetails) => {
+    getUpdatedRoute(primary, driver, (err, routeDetails) => {
         if (err) return res.status(500).json({ error: err.message });
 
-        const rideId = `${userId}-${driver.id}`;
+        const rideId = `${primary.id}-${driver.id}`;
         activeRides[rideId] = {
-            user,
+            users: pooledUsers,
             driver,
             route: routeDetails,
             lastUpdated: Date.now()
         };
-       
-     
+
+        // OPTIONAL: Logging for pooled rides
+        try {
+            const fs = require('fs');
+            const logFile = 'matched_rides.csv';
+
+            pooledUsers.forEach(u => {
+                const logEntry = `${u.id},${u.name},${driver.id},${driver.name},${new Date().toISOString()},${routeDetails.fare},${routeDetails.distance},${routeDetails.duration}\n`;
+
+                if (!fs.existsSync(logFile)) {
+                    fs.writeFileSync(logFile, 'userId,userName,driverId,driverName,timestamp,fare,distance,duration\n');
+                }
+                fs.appendFileSync(logFile, logEntry);
+            });
+        } catch (e) {
+            console.error("Ride logging failed:", e.message);
+        }
 
         res.json({
-            user: user.name,
+            users: pooledUsers.map(u => ({ id: u.id, name: u.name })),
             matchedDriver: driver.name,
             etaInMinutes: estimatedTimeInMinutes,
             route: routeDetails,
             fare: routeDetails.fare
         });
-
-        scheduleRouteUpdates(rideId);
     });
 });
+
 
 // Keeps refreshing the route every 30s
 function scheduleRouteUpdates(rideId) {
