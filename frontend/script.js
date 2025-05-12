@@ -5,28 +5,26 @@ async function requestRide() {
         return;
     }
 
-    // Simulate user location input (replace with actual location input)
     const userLocation = {
-        latitude: 22.5 + Math.random() * 0.1,
-        longitude: 88.3 + Math.random() * 0.1
+        latitude: 30.3165 + Math.random() * 0.01,
+        longitude: 78.0322 + Math.random() * 0.01
     };
 
     try {
-        const response = await fetch('http://localhost:5000/api/requestRide', {  // New endpoint
+        const response = await fetch('http://localhost:5000/api/requestRide', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ userId, userLocation })
         });
 
         const data = await response.json();
-        alert(data.message); // "Ride request received"
+        alert(data.status || data.message || "Ride requested");  
     } catch (error) {
         console.error('Error requesting ride:', error);
         alert('Error requesting ride!');
     }
 }
+
 
 async function matchRide() {
     const userId = document.getElementById('userId').value;
@@ -93,20 +91,25 @@ function decodePolyline(encoded) {
 
 function displayRoute(route) {
     const map = new google.maps.Map(document.getElementById('map'), {
-        center: { lat: route.userLocation.latitude, lng: route.userLocation.longitude },
+        center: {
+            lat: route.userLocation.latitude,
+            lng: route.userLocation.longitude
+        },
         zoom: 13
     });
 
     const path = [];
-    if (route.path && route.path.length > 0) {
-        route.path.forEach(node => {
-            const coord = graphNodes[node];
-            if (coord) {
-                path.push(new google.maps.LatLng(coord.latitude, coord.longitude));
-            }
+
+    // Decode polyline if available (Google API response)
+    if (route.polyline && route.polyline.points) {
+        const decodedPoints = decodePolyline(route.polyline.points);
+        decodedPoints.forEach(point => {
+            path.push(new google.maps.LatLng(point.lat, point.lng));
         });
-    } else {
-        // Fallback to decoding polylines if available
+    }
+
+    // Fallback: Decode from steps if no overview polyline
+    else if (route.steps && route.steps.length > 0) {
         route.steps.forEach(step => {
             if (step.polyline && step.polyline.points) {
                 const decodedPoints = decodePolyline(step.polyline.points);
