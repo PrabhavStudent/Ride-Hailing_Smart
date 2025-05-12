@@ -157,6 +157,9 @@ app.post('/api/requestRide', (req, res) => {
 
 // Immediate matching endpoint
 app.post('/api/matchRide', (req, res) => {
+    const fs = require('fs');
+    const logFile = 'matched_rides.csv';
+
     const { userId } = req.body;
 
     const user = userList.find(u => u.id === userId);
@@ -181,6 +184,15 @@ app.post('/api/matchRide', (req, res) => {
             route: routeDetails,
             lastUpdated: Date.now()
         };
+        // Log ride to CSV
+        const logEntry = `${user.id},${user.name},${driver.id},${driver.name},${new Date().toISOString()},${routeDetails.fare},${routeDetails.distance},${routeDetails.duration}\n`;
+
+        if (!fs.existsSync(logFile)) 
+        {
+            fs.writeFileSync(logFile, 'userId,userName,driverId,driverName,timestamp,fare,distance,duration\n');
+        }
+        fs.appendFileSync(logFile, logEntry);
+
 
         res.json({
             user: user.name,
