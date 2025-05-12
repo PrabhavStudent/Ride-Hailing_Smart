@@ -2,7 +2,7 @@
 const express = require('express');
 const app = express();
 const cors = require('cors');
-const request = require('request'); // Still using this old friend; yeah I know it's deprecated
+const request = require('request'); 
 
 // Custom modules
 const { loadData } = require('./data');
