@@ -198,22 +198,8 @@ app.post('/api/matchRide', (req, res) => {
             lastUpdated: Date.now()
         };
 
-        // OPTIONAL: Logging for pooled rides
-        try {
-            const fs = require('fs');
-            const logFile = 'matched_rides.csv';
-
-            pooledUsers.forEach(u => {
-                const logEntry = `${u.id},${u.name},${driver.id},${driver.name},${new Date().toISOString()},${routeDetails.fare},${routeDetails.distance},${routeDetails.duration}\n`;
-
-                if (!fs.existsSync(logFile)) {
-                    fs.writeFileSync(logFile, 'userId,userName,driverId,driverName,timestamp,fare,distance,duration\n');
-                }
-                fs.appendFileSync(logFile, logEntry);
-            });
-        } catch (e) {
-            console.error("Ride logging failed:", e.message);
-        }
+      
+       
 
         res.json({
             users: pooledUsers.map(u => ({ id: u.id, name: u.name })),
