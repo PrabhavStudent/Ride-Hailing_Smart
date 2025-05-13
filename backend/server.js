@@ -171,34 +171,26 @@ app.post('/api/matchRide', (req, res) => {
         return res.status(500).json({ error: 'No drivers available' });
     }
 
-    getUpdatedRoute(primary, driver, (err, routeDetails) => {
-        if (err) return res.status(500).json({ error: err.message });
+    getUpdatedRoute(user, driver, (err, routeDetails) => {
+    if (err) return res.status(500).json({ error: err.message });
 
-        const rideId = `${primary.id}-${driver.id}`;
-        activeRides[rideId] = {
-            users: pooledUsers,
-            driver,
-            route: routeDetails,
-            lastUpdated: Date.now()
-        };
-        // Log ride to CSV
-        const logEntry = `${user.id},${user.name},${driver.id},${driver.name},${new Date().toISOString()},${routeDetails.fare},${routeDetails.distance},${routeDetails.duration}\n`;
-
-        if (!fs.existsSync(logFile)) 
-        {
-            fs.writeFileSync(logFile, 'userId,userName,driverId,driverName,timestamp,fare,distance,duration\n');
-        }
-        fs.appendFileSync(logFile, logEntry);
-
-
-        res.json({
-            users: pooledUsers.map(u => ({ id: u.id, name: u.name })),
-            matchedDriver: driver.name,
-            etaInMinutes: estimatedTimeInMinutes,
-            route: routeDetails,
-            fare: routeDetails.fare
-        });
+    const rideId = `${user.id}-${driver.id}`;
+    activeRides[rideId] = {
+        users: [user],
+        driver,
+        route: routeDetails,
+        lastUpdated: Date.now()
+    };
+    
+    res.json({
+        users: [{ id: user.id, name: user.name }],
+        matchedDriver: driver.name,
+        etaInMinutes: estimatedTimeInMinutes,
+        route: routeDetails,
+        fare: routeDetails.fare
     });
+});
+
 });
 
 
@@ -347,7 +339,7 @@ async function bootServer() {
         userList = users;
         driverList = drivers;
 
-        // getDriverMatch = createMatchDriver(driverList); // init matcher
+        getDriverMatch = createMatchDriver(driverList); // init matcher
 
         app.listen(PORT, () => {
             console.log(`Server listening on port ${PORT}`);
