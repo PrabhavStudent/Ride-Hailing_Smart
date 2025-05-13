@@ -164,26 +164,7 @@ app.post('/api/matchRide', (req, res) => {
         return res.status(400).json({ error: 'Invalid user or missing location' });
     }
 
-    // Group similar users for pooling (for demo: pick 2 others within RIDE_RADIUS_LIMIT)
-    const poolCandidates = rideQueue.filter(r =>
-        r.userId !== userId &&
-        calculateDistance(user.location, r.userLocation) <= RIDE_RADIUS_LIMIT
-    );
-
-    const pooledUsers = [user];
-    if (poolCandidates.length > 0) {
-        const extraUsers = poolCandidates.slice(0, 2);
-        extraUsers.forEach(r => {
-            const match = userList.find(u => u.id === r.userId);
-            if (match) pooledUsers.push(match);
-        });
-    }
-
-    // Pick the first user to calculate match
-    const primary = pooledUsers[0];
-    // Create matcher dynamically to use current driverList
-    const getDriverMatch = createMatchDriver(driverList);
-    const match = getDriverMatch(primary.location);
+    const match = getDriverMatch(user.location);
     const { driver, estimatedTimeInMinutes } = match;
 
     if (!driver) {
@@ -200,6 +181,15 @@ app.post('/api/matchRide', (req, res) => {
             route: routeDetails,
             lastUpdated: Date.now()
         };
+        // Log ride to CSV
+        const logEntry = `${user.id},${user.name},${driver.id},${driver.name},${new Date().toISOString()},${routeDetails.fare},${routeDetails.distance},${routeDetails.duration}\n`;
+
+        if (!fs.existsSync(logFile)) 
+        {
+            fs.writeFileSync(logFile, 'userId,userName,driverId,driverName,timestamp,fare,distance,duration\n');
+        }
+        fs.appendFileSync(logFile, logEntry);
+
 
         res.json({
             users: pooledUsers.map(u => ({ id: u.id, name: u.name })),
