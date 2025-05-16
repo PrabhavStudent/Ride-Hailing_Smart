@@ -1,4 +1,15 @@
 const axios = require('axios');
+async function getRoute(origin, destination) {
+  const response = await axios.get('https://maps.googleapis.com/maps/api/directions/json', {
+    params: {
+      origin: origin,
+      destination: destination,
+      key: 'AIzaSyB1cJOMNFXz_986RCHyT5Yeu9Du5X8DxBI'
+    }
+  });
+
+  return response.data;
+}
 const { findShortestPath, graph, graphNodes } = require('./util');
 
 // Placeholder function to fetch traffic data from Google API

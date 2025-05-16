@@ -3,7 +3,7 @@ const express = require('express');
 const app = express();
 const cors = require('cors');
 const request = require('request'); // Still using this old friend; yeah I know it's deprecated
-
+const axios = require('axios');
 // Custom modules
 const { loadData } = require('./data');
 const { createMatchDriver } = require('./RideMatching');
@@ -16,7 +16,7 @@ const {
 } = require('./util');
 
 const { getOptimizedRoute } = require('./RealTimeRouteOptimization');
-
+const GOOGLE_API_KEY = 'AIzaSyB1cJOMNFXz_986RCHyT5Yeu9Du5X8DxBI';
 app.use(cors());
 app.use(express.json()); // Let Express handle JSON parsing
 
@@ -41,10 +41,14 @@ let userList = [];
 let driverList = [];
 let getDriverMatch = null; // gets initialized once data is ready
 
+const PORT = 5000; // moved here so bootServer can use it
+
 // Pretty primitive method for travel time
 function fetchGoogleTravelTime(origin, destination) {
     return new Promise((resolve, reject) => {
-        const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${destination}&departure_time=now&key=${AIzaSyDdqjraOI_SUO71fOMSE2sCtZx6PxGKYAU}`;
+        const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${destination}&key=${GOOGLE_API_KEY}`;
+console.log("🚨 Final Google Directions API request URL:", url);
+console.log("🚨 Final Google Directions API request URL:", url);
 
         request(url, (err, resp, body) => {
             if (err || resp.statusCode !== 200) {
@@ -99,54 +103,63 @@ async function getUpdatedRoute(user, driver, callback) {
     try {
         const origin = `${driver.location.latitude},${driver.location.longitude}`;
         const destination = `${user.location.latitude},${user.location.longitude}`;
+        const GOOGLE_API_KEY = 'YOUR_WORKING_SERVER_KEY'; // ✅ insert the correct key
 
-        const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${destination}&key=AIzaSyDdqjraOI_SUO71fOMSE2sCtZx6PxGKYAU`;
+        const url = `https://maps.googleapis.com/maps/api/directions/json`;
 
-        request(url, (err, resp, body) => {
-            if (err || resp.statusCode !== 200) {
-                return callback(new Error('Google Directions API error'));
+        const response = await axios.get(url, {
+            params: {
+                origin,
+                destination,
+                key: GOOGLE_API_KEY
             }
-
-            let data;
-            try {
-                data = JSON.parse(body);
-            } catch (e) {
-                return callback(new Error('Failed to parse Directions API response'));
-            }
-
-            const route = data.routes?.[0];
-            const leg = route?.legs?.[0];
-            if (!leg) return callback(new Error('No valid route found'));
-
-            const fare = computeFare(leg.distance.value / 1000, leg.duration.value / 60, rideQueue.length);
-
-            callback(null, {
-                distance: leg.distance.text,
-                duration: leg.duration.text,
-                steps: leg.steps,
-                polyline: route.overview_polyline,
-                userLocation: user.location,
-                driverLocation: driver.location,
-                fare
-            });
         });
-    } catch (e) {
-        callback(e);
+
+        const data = response.data;
+
+        if (data.status !== 'OK') {
+            console.error("❌ Google returned error:", data.status, data.error_message);
+            return callback(new Error(`Google API error: ${data.status}`));
+        }
+
+        const route = data.routes[0];
+        const leg = route.legs[0];
+
+        if (!leg) {
+            return callback(new Error("No leg data in route"));
+        }
+
+        const fare = computeFare(leg.distance.value / 1000, leg.duration.value / 60, rideQueue.length);
+
+        callback(null, {
+            distance: leg.distance.text,
+            duration: leg.duration.text,
+            steps: leg.steps,
+            polyline: route.overview_polyline,
+            userLocation: user.location,
+            driverLocation: driver.location,
+            fare
+        });
+    } catch (err) {
+        console.error("🚨 Axios failed:", err.message);
+        callback(new Error("Google Directions API error"));
     }
-}
+}  
+
 
 
 // Handles a new ride request
 app.post('/api/requestRide', (req, res) => {
-    const { userId, userLocation } = req.body;
+    const { userId } = req.body;
 
-    if (!userId || !userLocation) {
-        return res.status(400).json({ error: 'Missing user data' });
+    const user = userList.find(u => u.id === userId);
+    if (!user) {
+        return res.status(400).json({ error: 'User not found' });
     }
 
     rideQueue.push({
         userId,
-        userLocation,
+        userLocation: user.location,
         requestTime: Date.now()
     });
 
@@ -259,7 +272,9 @@ function tryPooling(group) {
     const destination = `${group[group.length - 1].userLocation.latitude},${group[group.length - 1].userLocation.longitude}`;
     const waypoints = group.slice(1, -1).map(r => `${r.userLocation.latitude},${r.userLocation.longitude}`).join('|');
 
-    const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${destination}&waypoints=${waypoints}&key=${AIzaSyDdqjraOI_SUO71fOMSE2sCtZx6PxGKYAU}`;
+    const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${destination}&key=${GOOGLE_API_KEY}`;
+console.log("🚨 Final Google Directions API request URL:", url);
+console.log("🚨 Final Google Directions API request URL:", url);
 
     request(url, (err, resp, body) => {
         if (err || resp.statusCode !== 200) {
@@ -349,5 +364,4 @@ async function bootServer() {
     }
 }
 
-const PORT = 5000;
 bootServer();
