@@ -1,6 +1,8 @@
+// Required modules
 const express = require('express');
+const app = express();
 const cors = require('cors');
-const request = require('request');
+const request = require('request'); // Still using this old friend; yeah I know it's deprecated
 
 // Custom modules
 const { loadData } = require('./data');
@@ -15,17 +17,18 @@ const {
 
 const { getOptimizedRoute } = require('./RealTimeRouteOptimization');
 
-// Middleware
 app.use(cors());
-app.use(express.json());
+app.use(express.json()); // Let Express handle JSON parsing
 
-// Temporary storage for active rides and ride requests (replace with a proper database in production)
-const activeRides = {};
-const rideRequests = [];
+// App state - should probably be moved into a class or store later
+const activeRides = {}; // rideId -> ride data
+const rideQueue = [];   // holds unprocessed ride requests
 
-const POOLING_BUFFER_TIME = 60000; // 1 minute (adjust as needed)
-const POOLING_RADIUS = 0.01; // Example radius (in lat/lon degrees)
+// Tweakable parameters
+const POOL_WAIT_TIME = 60000; // 1 min wait before attempting pool
+const RIDE_RADIUS_LIMIT = 0.01; // Arbitrary proximity threshold
 
+// Fare model - not very DRY but clear enough
 const BASE_FARE = 50;
 const PER_KM = 10;
 const PER_MINUTE = 2;
@@ -34,116 +37,125 @@ const LOW_DEMAND = 2;
 const SURGE_MULTIPLIER = 1.5;
 const DISCOUNT_MULTIPLIER = 0.8;
 
-let users = [];
-let drivers = [];
-let matchDriver;
+let userList = [];
+let driverList = [];
+let getDriverMatch = null; // gets initialized once data is ready
 
-// Helper function to get travel time between two points from Google API
-function getTravelTimeFromGoogle(origin, destination) {
+// Pretty primitive method for travel time
+function fetchGoogleTravelTime(origin, destination) {
     return new Promise((resolve, reject) => {
-        const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${destination}&departure_time=now&key=${process.env.GOOGLE_MAPS_API_KEY}`;
-        request(url, (error, response, body) => {
-            if (error || response.statusCode !== 200) {
-                console.error('Error fetching travel time from Google API:', error);
-                return reject(new Error('Failed to fetch travel time from Google API'));
+        const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${destination}&departure_time=now&key=${AIzaSyDdqjraOI_SUO71fOMSE2sCtZx6PxGKYAU}`;
+
+        request(url, (err, resp, body) => {
+            if (err || resp.statusCode !== 200) {
+                return reject('Couldn’t fetch travel time from Google');
             }
-            const data = JSON.parse(body);
-            if (data.status !== 'OK') {
-                console.error('Google Maps API error:', data.status);
-                return reject(new Error(`Google Maps API error: ${data.status}`));
+
+            let data;
+            try {
+                data = JSON.parse(body);
+            } catch (e) {
+                return reject('Failed to parse response');
             }
-            const leg = data.routes[0].legs[0];
-            resolve(leg.duration_in_traffic ? leg.duration_in_traffic.value : leg.duration.value); // seconds
+
+            if (data.status !== 'OK') return reject(`Google API error: ${data.status}`);
+
+            const leg = data.routes?.[0]?.legs?.[0];
+            if (!leg) return reject('No leg data found');
+
+            resolve(leg.duration_in_traffic?.value || leg.duration.value);
         });
     });
 }
 
-// Function to update graph edge weights with real-time traffic data
-async function updateGraphWeightsWithTraffic() {
-    const updatedGraph = JSON.parse(JSON.stringify(graph)); // Deep copy to avoid mutation
-    const edgeKeys = Object.keys(updatedGraph);
+// Overwrites edge weights based on current traffic
+async function recalculateTrafficWeights() {
+    const newGraph = JSON.parse(JSON.stringify(graph)); // deep clone to avoid mutation
 
-    for (const edgeKey of edgeKeys) {
+    for (let edgeKey in newGraph) {
         const [from, to] = edgeKey.split('-');
-        const fromNode = graphNodes[from];
-        const toNode = graphNodes[to];
-        if (!fromNode || !toNode) continue;
+        const nodeA = graphNodes[from];
+        const nodeB = graphNodes[to];
+
+        if (!nodeA || !nodeB) continue;
 
         const coordA = `${nodeA.latitude},${nodeA.longitude}`;
         const coordB = `${nodeB.latitude},${nodeB.longitude}`;
 
         try {
-            const travelTimeSeconds = await getTravelTimeFromGoogle(origin, destination);
-            // Convert travel time to a weight (e.g., in minutes)
-            updatedGraph[edgeKey] = travelTimeSeconds / 60;
+            const timeInSec = await fetchGoogleTravelTime(coordA, coordB);
+            newGraph[edgeKey] = timeInSec / 60; // store in minutes
         } catch (err) {
-            console.error(`Failed to update edge weight for ${edgeKey}:`, err);
-            // Keep original weight if API call fails
+            // failed? skip and move on
         }
     }
-    return updatedGraph;
+
+    return newGraph;
 }
 
-async function getDirectionsRoute(user, driver, callback) {
+// Finds path and builds basic route object
+// Finds path and builds basic route object using Google Maps API
+async function getUpdatedRoute(user, driver, callback) {
     try {
-        const updatedGraph = await updateGraphWeightsWithTraffic();
+        const origin = `${driver.location.latitude},${driver.location.longitude}`;
+        const destination = `${user.location.latitude},${user.location.longitude}`;
 
-        const startNode = findNearestNode(user.location);
-        const endNode = findNearestNode(driver.location);
+        const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${destination}&key=AIzaSyDdqjraOI_SUO71fOMSE2sCtZx6PxGKYAU`;
 
-        if (!startNode || !endNode) {
-            return callback(new Error('Could not find nearest graph nodes for user or driver'));
-        }
+        request(url, (err, resp, body) => {
+            if (err || resp.statusCode !== 200) {
+                return callback(new Error('Google Directions API error'));
+            }
 
-        const shortestPathResult = findShortestPath(updatedGraph, startNode, endNode);
-        const pathNodes = shortestPathResult.path;
-        const totalDistance = shortestPathResult.distance;
+            let data;
+            try {
+                data = JSON.parse(body);
+            } catch (e) {
+                return callback(new Error('Failed to parse Directions API response'));
+            }
 
-        // Approximate duration using updated weights (sum of edge weights)
-        const duration = shortestPathResult.distance; // Assuming distance is in minutes from updated weights
+            const route = data.routes?.[0];
+            const leg = route?.legs?.[0];
+            if (!leg) return callback(new Error('No valid route found'));
 
-        // Construct route steps with dummy instructions and polylines (for frontend compatibility)
-        const steps = [];
-        for (let i = 0; i < pathNodes.length - 1; i++) {
-            const fromNode = pathNodes[i];
-            const toNode = pathNodes[i + 1];
-            steps.push({
-                html_instructions: `Drive from ${fromNode} to ${toNode}`,
-                travel_mode: 'DRIVING',
-                polyline: {
-                    points: '' // Polyline encoding can be added if needed
-                }
+            const fare = computeFare(leg.distance.value / 1000, leg.duration.value / 60, rideQueue.length);
+
+            callback(null, {
+                distance: leg.distance.text,
+                duration: leg.duration.text,
+                steps: leg.steps,
+                polyline: route.overview_polyline,
+                userLocation: user.location,
+                driverLocation: driver.location,
+                fare
             });
-        }
-
-        const routeData = {
-            distance: totalDistance,
-            duration: duration,
-            steps: steps,
-            userLocation: user.location,
-            driverLocation: driver.location,
-            path: pathNodes  // Added path array for frontend route display
-        };
-
-        // Calculate fare
-        const fare = calculateFare(routeData.distance, routeData.duration, rideRequests.length); // Use active request count as a proxy for demand
-        routeData.fare = fare;
-
-        callback(null, routeData);
-    } catch (err) {
-        callback(err);
+        });
+    } catch (e) {
+        callback(e);
     }
 }
 
-app.post('/api/requestRide', (req, res) => { // New endpoint for ride requests
-    const { userId, userLocation } = req.body;
-    const request = { userId, userLocation, requestTime: Date.now() };
-    rideRequests.push(request);
-    res.json({ message: 'Ride request received' });
 
-    processRideRequests();
+// Handles a new ride request
+app.post('/api/requestRide', (req, res) => {
+    const { userId, userLocation } = req.body;
+
+    if (!userId || !userLocation) {
+        return res.status(400).json({ error: 'Missing user data' });
+    }
+
+    rideQueue.push({
+        userId,
+        userLocation,
+        requestTime: Date.now()
+    });
+
+    res.json({ status: 'Request queued' });
+
+    evaluateRideQueue(); // process queue if needed
 });
 
+// Immediate matching endpoint
 app.post('/api/matchRide', (req, res) => {
     const { userId } = req.body;
 
@@ -152,77 +164,61 @@ app.post('/api/matchRide', (req, res) => {
         return res.status(400).json({ error: 'Invalid user or missing location' });
     }
 
-    const match = matchDriver(user.location);
-    const driver = match.driver;
+    const match = getDriverMatch(user.location);
+    const { driver, estimatedTimeInMinutes } = match;
 
     if (!driver) {
-        console.error(`No driver matched for userId: ${userId}`);
-        return res.status(500).json({ error: 'No driver matched' });
+        return res.status(500).json({ error: 'No drivers available' });
     }
 
-    getDirectionsRoute(user, driver, (err, routeData) => {
-        if (err) {
-            console.error(`Error in getDirectionsRoute: ${err.message}`);
-            return res.status(500).json({ error: err.message });
-        }
+    getUpdatedRoute(user, driver, (err, routeDetails) => {
+        if (err) return res.status(500).json({ error: err.message });
 
-        const rideId = `${userId}-${driver.id}`; // Unique ride ID
+        const rideId = `${userId}-${driver.id}`;
         activeRides[rideId] = {
             user,
             driver,
-            route: routeData,
+            route: routeDetails,
             lastUpdated: Date.now()
         };
-
-        scheduleRouteUpdates(rideId);
 
         res.json({
             user: user.name,
             matchedDriver: driver.name,
-            etaInMinutes: match.estimatedTimeInMinutes,
-            route: routeData,
-            fare: routeData.fare // Include fare in the initial response
+            etaInMinutes: estimatedTimeInMinutes,
+            route: routeDetails,
+            fare: routeDetails.fare
         });
 
-        // Start periodic route updates
-        startRouteUpdates(rideId);
+        scheduleRouteUpdates(rideId);
     });
 });
 
-function updateRoute(rideId) {
-    const ride = activeRides[rideId];
-    if (!ride) return;
-
-    // Use updated graph weights with traffic for route optimization
-    getDirectionsRoute(ride.user, ride.driver, (err, newRouteData) => {
-        if (err) {
-            console.error('Error updating route:', err);
-            return;
-        }
-
-        // Basic route comparison (you can improve this)
-        if (newRouteData.duration !== ride.route.duration || newRouteData.distance !== ride.route.distance) {
-            console.log(`Route updated for ride ${rideId}`);
-            ride.route = newRouteData;
-            ride.lastUpdated = Date.now();
-
-            // TODO: Send newRouteData to the frontend (e.g., via WebSocket or a separate API endpoint)
-            // For now, logging the updated route:
-            console.log('Updated Route:', newRouteData);
-        }
-    });
-}
-
-function startRouteUpdates(rideId) {
+// Keeps refreshing the route every 30s
+function scheduleRouteUpdates(rideId) {
     setInterval(() => {
-        updateRoute(rideId);
-    }, 30000); // Update every 30 seconds (adjust as needed)
+        const ride = activeRides[rideId];
+        if (!ride) return;
+
+        getUpdatedRoute(ride.user, ride.driver, (err, newRoute) => {
+            if (!err && (
+                newRoute.distance !== ride.route.distance ||
+                newRoute.duration !== ride.route.duration
+            )) {
+                ride.route = newRoute;
+                ride.lastUpdated = Date.now();
+                console.log(`Updated route for ${rideId}`);
+            }
+        });
+    }, 30000);
 }
 
-function processRideRequests() {
+// Evaluates rideQueue to form pools or handle singles
+function evaluateRideQueue() {
     const now = Date.now();
-    const eligibleRequests = rideRequests.filter(req => now - req.requestTime <= POOLING_BUFFER_TIME);
-    if (eligibleRequests.length < 2) return; // Need at least 2 requests to pool
+    const recent = rideQueue.filter(r => now - r.requestTime <= POOL_WAIT_TIME);
+
+    if (recent.length < 2) return;
 
     const grouped = groupRequests(recent);
     grouped.forEach(group => {
@@ -233,42 +229,37 @@ function processRideRequests() {
         }
     });
 
-    // Remove processed requests
-    rideRequests.splice(0, eligibleRequests.length);
+    rideQueue.splice(0, recent.length); // remove handled ones
 }
 
-function clusterRideRequests(requests) {
-    // Basic proximity-based clustering (can be improved)
-    const clusters = [];
-    requests.forEach(req => {
-        let added = false;
-        for (const cluster of clusters) {
-            const representative = cluster[0];
-            if (calculateDistance(req.userLocation, representative.userLocation) <= POOLING_RADIUS) {
-                cluster.push(req);
-                added = true;
+// Groups close rides together - very rough clustering
+function groupRequests(requests) {
+    const buckets = [];
+
+    for (let req of requests) {
+        let placed = false;
+
+        for (let bucket of buckets) {
+            if (calculateDistance(req.userLocation, bucket[0].userLocation) <= RIDE_RADIUS_LIMIT) {
+                bucket.push(req);
+                placed = true;
                 break;
             }
         }
-        if (!added) {
-            clusters.push([req]);
-        }
-    });
-    return clusters;
+
+        if (!placed) buckets.push([req]);
+    }
+
+    return buckets;
 }
 
-/* Removed duplicate calculateDistance function to avoid redeclaration error */
+// Try pooling the ride group
+function tryPooling(group) {
+    const origin = `${group[0].userLocation.latitude},${group[0].userLocation.longitude}`;
+    const destination = `${group[group.length - 1].userLocation.latitude},${group[group.length - 1].userLocation.longitude}`;
+    const waypoints = group.slice(1, -1).map(r => `${r.userLocation.latitude},${r.userLocation.longitude}`).join('|');
 
-function calculateAndMatchPooledRide(cluster) {
-    const waypoints = cluster.slice(1).map(req => ({
-        location: `${req.userLocation.latitude},${req.userLocation.longitude}`,
-        stopover: true
-    }));
-
-    const origin = `${cluster[0].userLocation.latitude},${cluster[0].userLocation.longitude}`;
-    const destination = `${cluster[cluster.length - 1].userLocation.latitude},${cluster[cluster.length - 1].userLocation.longitude}`;
-
-    const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${destination}&waypoints=${waypoints}&key=${process.env.GOOGLE_MAPS_API_KEY}`;
+    const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${destination}&waypoints=${waypoints}&key=${AIzaSyDdqjraOI_SUO71fOMSE2sCtZx6PxGKYAU}`;
 
     request(url, (err, resp, body) => {
         if (err || resp.statusCode !== 200) {
@@ -303,59 +294,60 @@ function calculateAndMatchPooledRide(cluster) {
     });
 }
 
-function matchIndividualRide(request) {
-    const driver = matchDriver(request.userLocation).driver;
-    getDirectionsRoute(request, driver, (err, routeData) => {
-        if (err) {
-            console.error('Error getting individual route:', err);
-            return;
-        }
-        // TODO: Send individual route and driver info to the user
-        console.log('Individual Ride Matched!', routeData);
+// Handle non-pooled request
+function handleSingleRide(req) {
+    const match = getDriverMatch(req.userLocation);
+    getUpdatedRoute(req, match.driver, (err, details) => {
+        if (!err) console.log('Single ride processed', details);
     });
 }
 
-function calculateFare(distance, duration, demand) {
-    let demandMultiplier = 1;
-    if (demand > HIGH_DEMAND_THRESHOLD) {
-        demandMultiplier = HIGH_DEMAND_MULTIPLIER;
-    } else if (demand < LOW_DEMAND_THRESHOLD) {
-        demandMultiplier = LOW_DEMAND_MULTIPLIER;
+// Simple fare computation
+function computeFare(distance, duration, demandLevel) {
+    let multiplier = 1;
+
+    if (demandLevel > HIGH_DEMAND) {
+        multiplier = SURGE_MULTIPLIER;
+    } else if (demandLevel < LOW_DEMAND) {
+        multiplier = DISCOUNT_MULTIPLIER;
     }
 
-    const fare = BASE_FARE + (distance * DISTANCE_RATE) + (duration * DURATION_RATE);
-    return fare * demandMultiplier;
+    const total = BASE_FARE + (distance * PER_KM) + (duration * PER_MINUTE);
+    return total * multiplier;
 }
 
-async function startServer() {
-    try {
-        const data = await loadData();
-        users = data.users;
-        drivers = data.drivers;
-        matchDriver = createMatchDriver(drivers);
-
-        app.listen(PORT, () => {
-            console.log(`Ride Matching Server is Running on port ${PORT}`);
-        });
-    } catch (err) {
-        console.error('Failed to load data:', err);
-    }
-}
-
+// Endpoint for optimized route
 app.post('/api/optimizedRoute', async (req, res) => {
     const { startNode, endNode } = req.body;
+
     if (!startNode || !endNode) {
-        return res.status(400).json({ error: 'startNode and endNode are required' });
+        return res.status(400).json({ error: 'Missing nodes' });
     }
+
     try {
-        const routeResult = await getOptimizedRoute(startNode, endNode);
-        res.json(routeResult);
-    } catch (err) {
-        console.error('Error getting optimized route:', err);
-        res.status(500).json({ error: 'Failed to get optimized route' });
+        const result = await getOptimizedRoute(startNode, endNode);
+        res.json(result);
+    } catch {
+        res.status(500).json({ error: 'Failed to calculate optimized route' });
     }
 });
 
+// Startup routine
+async function bootServer() {
+    try {
+        const { users, drivers } = await loadData();
+        userList = users;
+        driverList = drivers;
 
+        getDriverMatch = createMatchDriver(driverList); // init matcher
 
-startServer();
+        app.listen(PORT, () => {
+            console.log(`Server listening on port ${PORT}`);
+        });
+    } catch (err) {
+        console.error('Server failed to start:', err);
+    }
+}
+
+const PORT = 5000;
+bootServer();
