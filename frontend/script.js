@@ -1,3 +1,4 @@
+// frontend/script.js
 async function requestRide() {
     const userId = document.getElementById('userId').value;
     if (!userId) {
@@ -18,13 +19,12 @@ async function requestRide() {
         });
 
         const data = await response.json();
-        alert(data.status || data.message || "Ride requested");  
+        alert(data.status || data.message || "Ride requested");
     } catch (error) {
         console.error('Error requesting ride:', error);
         alert('Error requesting ride!');
     }
 }
-
 
 async function matchRide() {
     const userId = document.getElementById('userId').value;
@@ -43,7 +43,12 @@ async function matchRide() {
 
         const data = await response.json();
 
-        displayRoute(data.route);
+        if (data.route) {
+            displayRoute(data.route, data.matchedDriverLocation);
+        } else {
+            alert(data.error || "No available drivers found.");
+            return;
+        }
 
         let userList = data.users.map(u => `${u.name} (${u.id})`).join('<br>');
         const farePerUser = (data.fare / data.users.length).toFixed(2);
@@ -93,7 +98,7 @@ function decodePolyline(encoded) {
     return points;
 }
 
-function displayRoute(route) {
+function displayRoute(route, driverLocation) {
     const map = new google.maps.Map(document.getElementById('map'), {
         center: {
             lat: route.userLocation.latitude,
@@ -124,8 +129,8 @@ function displayRoute(route) {
     // 🚩 Add marker for driver
     new google.maps.Marker({
         position: {
-            lat: route.driverLocation.latitude,
-            lng: route.driverLocation.longitude
+            lat: driverLocation.latitude,
+            lng: driverLocation.longitude
         },
         map: map,
         label: "D",

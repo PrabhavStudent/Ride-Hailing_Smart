@@ -1,3 +1,4 @@
+// RideMatching.js
 const { calculateDistance, calculateETA } = require('./util');
 
 function createMatchDriver(drivers) {
@@ -6,8 +7,11 @@ function createMatchDriver(drivers) {
         let shortestETA = Infinity;
 
         drivers.forEach(driver => {
+            if (!driver.available) { // Ensure driver is available
+                return;
+            }
             const distance = calculateDistance(userLocation, driver.location);
-            const eta = calculateETA(distance, driver.speed); // smaller ETA is better
+            const eta = calculateETA(distance, driver.speed);
 
             if (eta < shortestETA) {
                 bestDriver = driver;
@@ -15,10 +19,17 @@ function createMatchDriver(drivers) {
             }
         });
 
-        return {
-            driver: bestDriver,
-            estimatedTimeInMinutes: (shortestETA * 60).toFixed(2)
-        };
+        if (bestDriver) {
+            return {
+                driver: bestDriver,
+                estimatedTimeInMinutes: (shortestETA * 60).toFixed(2)
+            };
+        } else {
+            return {
+                driver: null,
+                estimatedTimeInMinutes: null
+            };
+        }
     };
 }
 
