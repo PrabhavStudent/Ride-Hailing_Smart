@@ -8,7 +8,8 @@ function loadCSVData(filename, headers) {
         fs.createReadStream(filename)
             .pipe(parse({
                 delimiter: ',',
-                columns: headers
+                columns: headers,
+                from_line: 2
             }))
             .on('data', (data) => results.push(data))
             .on('end', () => {
@@ -48,7 +49,7 @@ async function loadData() {
                 longitude: parseFloat(row.longitude)
             },
             speed: parseFloat(row.speed),
-            available: row.available === 'true'
+            available: row.available.toLowerCase() === 'true'
         }));
         console.log('Drivers loaded successfully.');
     } catch (err) {

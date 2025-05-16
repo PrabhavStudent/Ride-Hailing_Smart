@@ -1,3 +1,4 @@
+// frontend/script.js
 async function requestRide() {
     const userId = document.getElementById('userId').value;
     if (!userId) {
@@ -18,13 +19,12 @@ async function requestRide() {
         });
 
         const data = await response.json();
-        alert(data.status || data.message || "Ride requested");  
+        alert(data.status || data.message || "Ride requested");
     } catch (error) {
         console.error('Error requesting ride:', error);
         alert('Error requesting ride!');
     }
 }
-
 
 async function matchRide() {
     const userId = document.getElementById('userId').value;
@@ -37,21 +37,30 @@ async function matchRide() {
     try {
         const response = await fetch('http://localhost:5000/api/matchRide', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ userId })
         });
 
         const data = await response.json();
-        displayRoute(data.route);
+
+        if (data.route) {
+            displayRoute(data.route, data.matchedDriverLocation);
+        } else {
+            alert(data.error || "No available drivers found.");
+            return;
+        }
+
+        let userList = data.users.map(u => `${u.name} (${u.id})`).join('<br>');
+        const farePerUser = (data.fare / data.users.length).toFixed(2);
 
         document.getElementById('result').innerHTML = `
+            <strong>Pooled Ride</strong><br>
+            Users:<br>${userList}<br><br>
             Matched Driver: ${data.matchedDriver} <br>
             ETA: ${data.etaInMinutes} minutes <br>
             Distance: ${data.route.distance} <br>
             Duration: ${data.route.duration} <br>
-            Fare: ${data.fare.toFixed(2)}
+            Fare (per user): ${farePerUser}
         `;
     } catch (error) {
         console.error('Error:', error);
@@ -89,7 +98,7 @@ function decodePolyline(encoded) {
     return points;
 }
 
-function displayRoute(route) {
+function displayRoute(route, driverLocation) {
     const map = new google.maps.Map(document.getElementById('map'), {
         center: {
             lat: route.userLocation.latitude,
@@ -100,23 +109,10 @@ function displayRoute(route) {
 
     const path = [];
 
-    // Decode polyline if available (Google API response)
     if (route.polyline && route.polyline.points) {
         const decodedPoints = decodePolyline(route.polyline.points);
         decodedPoints.forEach(point => {
             path.push(new google.maps.LatLng(point.lat, point.lng));
-        });
-    }
-
-    // Fallback: Decode from steps if no overview polyline
-    else if (route.steps && route.steps.length > 0) {
-        route.steps.forEach(step => {
-            if (step.polyline && step.polyline.points) {
-                const decodedPoints = decodePolyline(step.polyline.points);
-                decodedPoints.forEach(point => {
-                    path.push(new google.maps.LatLng(point.lat, point.lng));
-                });
-            }
         });
     }
 
@@ -129,6 +125,43 @@ function displayRoute(route) {
     });
 
     routePath.setMap(map);
+
+    // 🚩 Add marker for driver
+    new google.maps.Marker({
+        position: {
+            lat: driverLocation.latitude,
+            lng: driverLocation.longitude
+        },
+        map: map,
+        label: "D",
+        title: "Driver"
+    });
+
+    // 👥 Add markers for each user (if multiple)
+    if (Array.isArray(route.pooledUsers)) {
+        route.pooledUsers.forEach((user, index) => {
+            new google.maps.Marker({
+                position: {
+                    lat: user.location.latitude,
+                    lng: user.location.longitude
+                },
+                map: map,
+                label: `${index + 1}`,
+                title: `User ${user.id}`
+            });
+        });
+    } else {
+        // fallback for single ride
+        new google.maps.Marker({
+            position: {
+                lat: route.userLocation.latitude,
+                lng: route.userLocation.longitude
+            },
+            map: map,
+            label: "U",
+            title: "User"
+        });
+    }
 }
 
 //  Mapping of graph nodes to lat/long (IMPORTANT:  Keep consistent with backend!)
