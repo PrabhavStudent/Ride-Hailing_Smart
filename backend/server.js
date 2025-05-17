@@ -103,7 +103,7 @@ async function getUpdatedRoute(user, driver, callback) {
     try {
         const origin = `${driver.location.latitude},${driver.location.longitude}`;
         const destination = `${user.location.latitude},${user.location.longitude}`;
-        const GOOGLE_API_KEY = 'YOUR_WORKING_SERVER_KEY'; // ✅ insert the correct key
+        const GOOGLE_API_KEY = 'AIzaSyB1cJOMNFXz_986RCHyT5Yeu9Du5X8DxBI'; // ✅ insert the correct key
 
         const url = `https://maps.googleapis.com/maps/api/directions/json`;
 
@@ -171,6 +171,8 @@ app.post('/api/requestRide', (req, res) => {
 // Immediate matching endpoint
 app.post('/api/matchRide', (req, res) => {
     const { userId } = req.body;
+
+    console.log(`Backend: Received matchRide request for userId: ${userId}`);
 
     const user = userList.find(u => u.id === userId);
     if (!user || !user.location) {
@@ -356,9 +358,9 @@ async function bootServer() {
 
         getDriverMatch = createMatchDriver(driverList); // init matcher
 
-        app.listen(PORT, () => {
-            console.log(`Server listening on port ${PORT}`);
-        });
+app.listen(PORT, () => {
+    console.log(`Backend server running and listening on port ${PORT}`);
+});
     } catch (err) {
         console.error('Server failed to start:', err);
     }

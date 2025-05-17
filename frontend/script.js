@@ -12,7 +12,7 @@ async function requestRide() {
     };
 
     try {
-        const response = await fetch('http://localhost:5000/api/requestRide', {
+        const response = await fetch('/api/requestRide', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ userId, userLocation })
@@ -34,8 +34,10 @@ async function matchRide() {
         return;
     }
 
+    console.log(`Frontend: Sending matchRide request for userId: ${userId}`);
+
     try {
-        const response = await fetch('http://localhost:5000/api/matchRide', {
+        const response = await fetch('/api/matchRide', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ userId })
